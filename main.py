@@ -8,8 +8,8 @@ import torchvision.transforms as transforms
 from torchvision.utils import save_image
 
 CANAIS  = 1
-LARGURA = 16
-ALTURA  = 16
+LARGURA = 32
+ALTURA  = 32
 
 ARQUIVO_REDE = 'emojis.pth'
 DATA_PATH    = 'data'
@@ -34,17 +34,19 @@ train_loader = torch.utils.data.DataLoader(
   shuffle=True
 )
 
+QTD_IMAGENS_REAIS = 7
+
 class Generator(nn.Module):
   def __init__(self):
     super(Generator, self).__init__()
-    self.entrada = nn.Linear(CANAIS * LARGURA * ALTURA, 4 * CANAIS * LARGURA * ALTURA) 
-    self.oculta1 = nn.Linear(4 * CANAIS * LARGURA * ALTURA, 8 * CANAIS * LARGURA * ALTURA)
-    self.oculta2 = nn.Linear(8 * CANAIS * LARGURA * ALTURA, 4 * CANAIS * LARGURA * ALTURA)
-    self.saida   = nn.Linear(4 * CANAIS * LARGURA * ALTURA, CANAIS * LARGURA * ALTURA) 
+    self.entrada = nn.Linear(QTD_IMAGENS_REAIS, 120) 
+    self.oculta1 = nn.Linear(120, 256)
+    self.oculta2 = nn.Linear(256, CANAIS * LARGURA * ALTURA)
+    self.saida   = nn.Linear(CANAIS * LARGURA * ALTURA, CANAIS * LARGURA * ALTURA) 
     self.activation = nn.Sigmoid()
 
   def forward(self, x):
-    x = x.view(CANAIS * LARGURA * ALTURA)
+    #x = x.view(CANAIS * LARGURA * ALTURA)
     x = self.activation(self.entrada(x))
     x = self.activation(self.oculta1(x))
     x = self.activation(self.oculta2(x))
@@ -74,9 +76,9 @@ class DiscriminatorConv(nn.Module):
 class DiscriminatorLinear(nn.Module):
   def __init__(self):
     super(DiscriminatorLinear, self).__init__()
-    self.linear1 = nn.Linear(CANAIS * LARGURA * ALTURA, 16 * CANAIS * LARGURA * ALTURA)
-    self.linear2 = nn.Linear(16 * CANAIS * LARGURA * ALTURA, 2 * LARGURA * ALTURA)
-    self.linear3 = nn.Linear(2 * LARGURA * ALTURA, 1)
+    self.linear1 = nn.Linear(CANAIS * LARGURA * ALTURA, CANAIS * LARGURA * ALTURA)
+    self.linear2 = nn.Linear(CANAIS * LARGURA * ALTURA, LARGURA * ALTURA // 2)
+    self.linear3 = nn.Linear(LARGURA * ALTURA // 2, 1)
     self.activation = nn.Sigmoid()
 
   def forward(self, x):
@@ -98,11 +100,21 @@ loss = nn.BCELoss() # Binary Cross Entropy Loss
 generator_optimizer = torch.optim.Adam(generator.parameters(), lr=0.0001) # otimizador do generator
 discriminator_optimizer = torch.optim.Adam(discriminator.parameters(), lr=0.0001) # otimizador do discriminator
 
+def cria_tensor_de_entrada(n, total = QTD_IMAGENS_REAIS):
+  # se n for 0 e total 4, saída: 1000
+  # se n for 2 e total 4, saída: 0010
+  # se n for 3 e total 4, saída: 0001
+  zeros_antes  = n
+  zeros_depois = total - n - 1
+  n_str = '0' * zeros_antes + '1' + '0' * zeros_depois
+  n_list = [int(x) for x in list(n_str)]
+  return torch.Tensor(n_list).float()
+
 def treina(epochs = 100):
   print('Vou começar o treinamento ...')
   for epoch in range(epochs):
     print(f'Treinando epoch {epoch + 1} ...')
-    for batch, (true_data, _) in enumerate(train_loader): # ingora o label do loader
+    for batch, (true_data, label) in enumerate(train_loader): # ingora o label do loader
       true_labels  = torch.ones(1, 1) # as imagens são consideradas entradas reais
       false_labels = torch.zeros(1, 1) # label para as imagens geradas
       
@@ -110,7 +122,7 @@ def treina(epochs = 100):
       generator_optimizer.zero_grad() # Zera os gradientes do generator
 
       # Criamos um ruído aleatório para o gerador
-      noise = torch.randn(1, CANAIS, LARGURA, ALTURA)
+      noise = cria_tensor_de_entrada(int(label.item()))  #torch.randn(1, CANAIS, LARGURA, ALTURA)
       generated_data = generator(noise) # Obtemos a saída do gerador
 
       # Otimização do generator
@@ -138,9 +150,10 @@ def treina(epochs = 100):
 
 def generate_image(epoch):
   with torch.no_grad():
-    noise = torch.randn(1, CANAIS, LARGURA, ALTURA)
-    generated = generator(noise)
-    save_image(generated, f'./samples/sample_{epoch}.png')
+    for i in range(QTD_IMAGENS_REAIS):
+      noise = cria_tensor_de_entrada(i) #torch.randn(1, CANAIS, LARGURA, ALTURA)
+      generated = generator(noise)
+      save_image(generated, f'./samples/emoji_e{epoch}_t{i}.png')
 
 if __name__ == '__main__':
   treina(500)
